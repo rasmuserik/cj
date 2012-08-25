@@ -55,6 +55,7 @@ function compress(json) { // {{{1
     }
     function writeString(str) { //{{{2
         var i = str.length;
+        var encHist = [];
         var prevEnc = undefined;
         var enc;
         while(i) {
@@ -93,11 +94,19 @@ function compress(json) { // {{{1
             writeCode(c);
 
             // update table
+            encHist.push(str.slice(i, i0).split('').reverse().join(''));
+            if(encHist.length > 1) {
+                updateDict(trie, encHist.slice(-2).join(''), 2);
+            }
+            
+            /*
+            // old update table
             enc = str.slice(i, i0).split('').reverse().join('');
             if(prevEnc !== undefined) {
                 updateDict(trie, prevEnc+enc, 2);
             }
             prevEnc = enc;
+            */
         }
     }
     function write(json) {//{{{2
