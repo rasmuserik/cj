@@ -35,13 +35,14 @@ function compress(json) { // {{{1
             write(array[i]);
         }
     }
-    function updateDict(dict, str) {
+    function updateDict(dict, str, len) {
         if(str) {
             var next = dict[str[0]] || {};
             dict[str[0]] = next;
-            updateDict(next, str.slice(1));
+            updateDict(next, str.slice(1), len);
         } else {
             dict.pos = pos;
+            dict.len = len;
         }
     }
     function codeLength(code) {
@@ -74,8 +75,7 @@ function compress(json) { // {{{1
                 if(dict.pos) {
                     len = i - j + 1;
                     code2 = pos - dict.pos;
-                    c = code2 & 31;
-                    code2 = code2 >> 5;
+                    c = dict.len - 2;
                     i = j;
                 }
                 --j;
@@ -95,7 +95,7 @@ function compress(json) { // {{{1
             // update table
             enc = str.slice(i, i0).split('').reverse().join('');
             if(prevEnc !== undefined) {
-                updateDict(trie, prevEnc+enc);
+                updateDict(trie, prevEnc+enc, 2);
             }
             prevEnc = enc;
         }
@@ -176,11 +176,14 @@ function decompress(buf, pos) { // {{{1
     function readStringCode(acc) {//{{{2
        var c = readCode();
        if(c<32) {
-           c = readCode() * 32 + c;
+           //c = readCode() * 32 + c;
+           var code2 = readCode();
            var prevpos = pos;
-           pos -= c;
-           readStringCode(acc);
-           readStringCode(acc);
+           pos -= code2;
+           c+=2;
+           do {
+               readStringCode(acc);
+           } while(--c);
            pos = prevpos;
        } else {
           acc.push(String.fromCharCode(c & 65535));
