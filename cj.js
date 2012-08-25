@@ -221,16 +221,11 @@ function CreateObject(buf, pos) { // {{{1
         }
         throw 'unhandled type or atom';
     }
-    function getLength() {
-        var prevpos = pos;
-        var code = readCode();
-        //console.log('length', code&7, code>>3, pos, prevpos);
-        var result = prevpos - pos + (((code&7)>3)?(code>>3):0);
-        pos = prevpos;
-        return result
-    }
     function skip() {
-        pos -= getLength();
+        var code = readCode();
+        if((code&7)>3) {
+            pos -= code >> 3;
+        }
     }
     function each(fn) {
         var code = readCode();
