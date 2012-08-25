@@ -1,4 +1,5 @@
 (function(){
+    'use strict';
 // Types
 // 0: atom
 // • 8: true
@@ -13,7 +14,9 @@
 // 7: Object
 //
 function cj(json) {
-    function writeByte(num) { result[pos++] = num; }
+    function writeByte(num) { 
+        result[pos++] = num; 
+    }
     function writeCode(num) {
         writeByte(num&127);
         num = (num / 128) |0;
@@ -40,7 +43,7 @@ function cj(json) {
     }
     function writeString(str) {
         var i = str.length;
-        var prevEnc = undefined;
+        var prevEnc;
         var enc;
         while(i) {
             var i0 = i;
@@ -48,11 +51,11 @@ function cj(json) {
 
             // Single char
             var c = str.charCodeAt(i);
-            if(!(c&0xe0)) { c+=256; };
+            if(!(c&0xe0)) { c+=256; }
 
             // Lookup in table
             var j = i;
-            var code2 = undefined;
+            var code2;
             var dict = tree;
             while(j && dict[str[j]]) {
                 dict = dict[str[j]];
@@ -104,7 +107,7 @@ function cj(json) {
                 writeCode(Math.abs(json*16) | 2 | (json<0?8:0));
             } else {
                 if(numDict[json]) {
-                    writeCode(1 + (pos-strDict[json])* 8);
+                    writeCode(1 + (pos-numDict[json])* 8);
                 } else {
                     prevpos = pos;
                     writeString(json.toString());
@@ -140,14 +143,14 @@ function cj(json) {
     for(var i = 0; i < result.length; i+=2) {
         result[i/2] = String.fromCharCode(result[i] + 256 * result[i+1]);
     }
-    return CreateObject(result.slice(0, result.length/2).join(''));
+    return createObject(result.slice(0, result.length/2).join(''));
 }
 var proto;
-function CreateObject(buf, pos) {
+function createObject(buf, pos) {
     var result = Object.create(proto);
     result.data = buf;
     result.pos = pos;
-    return result
+    return result;
 }
 
 proto = (function() {
@@ -192,37 +195,51 @@ proto = (function() {
             result.push(readJSON());
         }
         return result;
-    };
+    }
 
     function readJSON() {
         var code = readCode();
         var length = code >> 3;
         var type = code & 7;
-        var result;
-        if(code === 8) { return true; }
-        if(code === 16) { return false; }
-        if(code === 24) { return undefined; }
-        if(code === 32) { return null; }
-        if(type === 1) { // backref
+        var array, result;
+        if(code === 8) { 
+            result = true; 
+        } else if(code === 16) { 
+            result = false; 
+        } else if(code === 24) { 
+            result = undefined; 
+        } else if(code === 32) { 
+            result = null; 
+        } else if(type === 1) { // backref
             var prevpos = pos;
             pos -= length;
             result = readJSON();
             pos = prevpos;
-            return result;
-        }
-        if(type === 2) { return (code&8)?-(code>>4):(code>>4); } // Integer
-        if(type === 4) { return readString(length); }
-        if(type === 5) { return +readString(length); } // Number
-        if(type === 6) { return readArray(length); }
-        if(type === 7) { // Object
-            var array = readArray(length);
-            var result = {};
+
+        // Integer
+        } else if(type === 2) { 
+            result = (code&8)?-(code>>4):(code>>4); 
+
+        } else if(type === 4) { 
+            result = readString(length); 
+
+        // Number
+        } else if(type === 5) { 
+            result = +readString(length); 
+        } else if(type === 6) { 
+            result = readArray(length); 
+        // Object
+        } else if(type === 7) { 
+            array = readArray(length);
+            result = {};
             for(var i = 0; i < array.length; i+=2) {
                 result[array[i]] = array[i+1];
             }
-            return result;
+        } else {
+            throw 'unhandled type or atom: ' + type;
         }
-        throw 'unhandled type or atom';
+        console.log(result);
+        return result;
     }
 
     function skip() {
@@ -246,9 +263,9 @@ proto = (function() {
         var i = 0;
         while(pos0 < pos) {
             if(isObj) {
-                fn(readJSON(), CreateObject(buf, pos));
+                fn(readJSON(), createObject(buf, pos));
             } else {
-                fn(i++, CreateObject(buf, pos));
+                fn(i++, createObject(buf, pos));
             }
             skip();
         }
@@ -260,7 +277,7 @@ proto = (function() {
             return readJSON();
         },
         get: function(id) {
-            var result = undefined
+            var result;
             this.each(function(key, val) {
                 if(key === id) { result = val; }
             });
@@ -269,25 +286,33 @@ proto = (function() {
         each: each,
     };
 })();
-cj.fromBin = CreateObject;
+cj.fromBin = createObject;
 
 
-// Export - both for commonjs and browser {{{1
+// Export - both for commonjs and browser 
 if(typeof exports === 'object' && typeof module === 'object') {
     module.exports = cj;
 } else if(typeof window !== 'undefined') {
     window.cj = cj;
 }
 
+// test
 var data;
 data = {a: 1, b:2, c: 3};
 data = JSON.parse(require('fs').readFileSync('test/sample.json', 'utf8'));
+data = JSON.parse(require('fs').readFileSync('crime-data_geojson.json', 'utf8'));
+//data = data.features.slice(157,167);
+//data = [data.features[157], data.features[166]];
+console.log(JSON.stringify(data));
+console.log(JSON.stringify(data).length, cj(data).data.length);
 require('assert').deepEqual(data, cj(data).val());
 var compressed = cj(data);
 console.log('json:', JSON.stringify(data).length);
 console.log('  cj:', compressed.data.length);
+/*
 compressed.get('meta').each(function(key, val) {
     console.log(key);
 });
+*/
 
 })();
