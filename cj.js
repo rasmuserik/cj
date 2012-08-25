@@ -56,8 +56,6 @@ function compress(json) { // {{{1
     function writeString(str) { //{{{2
         var i = str.length;
         var encHist = [];
-        var prevEnc = undefined;
-        var enc;
         while(i) {
             var i0 = i;
             --i;
@@ -95,18 +93,9 @@ function compress(json) { // {{{1
 
             // update table
             encHist.push(str.slice(i, i0).split('').reverse().join(''));
-            if(encHist.length > 1) {
-                updateDict(trie, encHist.slice(-2).join(''), 2);
+            for(k = 2; k <= Math.min(encHist.length, 32); ++k) {
+                updateDict(trie, encHist.slice(-k).join(''), k);
             }
-            
-            /*
-            // old update table
-            enc = str.slice(i, i0).split('').reverse().join('');
-            if(prevEnc !== undefined) {
-                updateDict(trie, prevEnc+enc, 2);
-            }
-            prevEnc = enc;
-            */
         }
     }
     function write(json) {//{{{2
@@ -246,6 +235,7 @@ function decompress(buf, pos) { // {{{1
 var testdata = ['ababababa bababa babab\n\t\rc', '123', {a:1, b:[1,'123',3], c:{}}, true, false, undefined, 1, 2, 3.5];
 var testdata = JSON.parse(require('fs').readFileSync('test/sample.json'));
 var json = JSON.stringify(testdata);
+console.log(json);
 var compressed = compress(testdata);
 var decompressed = JSON.stringify(decompress(compressed));
 //console.log(compressed.map(function(a) { return String.fromCharCode(a); }));
