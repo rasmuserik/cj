@@ -12,9 +12,9 @@
 // 6: Array
 // 7: Object
 //
-function compress(json) { // {{{1
-    function writeByte(num) { result[pos++] = num; } //{{{2
-    function writeCode(num) { //{{{2
+function compress(json) {
+    function writeByte(num) { result[pos++] = num; }
+    function writeCode(num) {
         writeByte(num&127);
         num = (num / 128) |0;
         while(num) {
@@ -22,7 +22,7 @@ function compress(json) { // {{{1
             num >>= 7;
         }
     }
-    function writeArray(array) { //{{{2
+    function writeArray(array) {
         var i = array.length;
         while(i) {
             --i;
@@ -38,7 +38,7 @@ function compress(json) { // {{{1
             dict.pos = pos;
         }
     }
-    function writeString(str) { //{{{2
+    function writeString(str) {
         var i = str.length;
         var prevEnc = undefined;
         var enc;
@@ -79,8 +79,8 @@ function compress(json) { // {{{1
             prevEnc = enc;
         }
     }
-    function write(json) {//{{{2
-        var prevpos, t; //{{{3
+    function write(json) {
+        var prevpos, t;
         if(json === true) {
             writeCode(8);
         } else if(json === false) {
@@ -129,7 +129,6 @@ function compress(json) { // {{{1
             throw {error: 'not json', data: json};
         }
     }
-    //{{{2
     var result = [];
     var strDict = {}, numDict = {};
     var tree = {};
@@ -144,7 +143,7 @@ function compress(json) { // {{{1
     return result.slice(0, result.length/2).join('');
 }
 
-function CreateObject(buf, pos) { // {{{1
+function CreateObject(buf, pos) {
     pos = pos || buf.length * 2;
     function peekByte() { 
         return (buf.charCodeAt((pos-1)>>1) >> (8*((pos-1)&1))) & 255;
@@ -153,7 +152,7 @@ function CreateObject(buf, pos) { // {{{1
         --pos;
         return (buf.charCodeAt(pos>>1) >> (8*(pos&1))) & 255;
     }
-    function readCode() { //{{{2
+    function readCode() {
         var b, result = 0;
         do {
             b = readByte();
@@ -161,7 +160,7 @@ function CreateObject(buf, pos) { // {{{1
         } while(b & 128);
         return result;
     }
-    function readStringCode(acc) {//{{{2
+    function readStringCode(acc) {
        var c = readCode();
        if(c<32) {
            c = readCode() * 32 + c;
@@ -174,7 +173,7 @@ function CreateObject(buf, pos) { // {{{1
           acc.push(String.fromCharCode((c&0xe0)?c:c-256));
        }
     }
-    function readString(length) {//{{{2
+    function readString(length) {
         var result = [];
         var endpos = pos - length;
         while(pos > endpos) {
@@ -182,7 +181,7 @@ function CreateObject(buf, pos) { // {{{1
         }
         return result.join('');
     }
-    function readArray(length) {//{{{2
+    function readArray(length) {
         var result = [];
         var endpos = pos - length;
         while(pos > endpos) {
@@ -191,7 +190,7 @@ function CreateObject(buf, pos) { // {{{1
         return result;
     };
 
-    function readJSON() {//{{{2
+    function readJSON() {
         var code = readCode();
         var length = code >> 3;
         var type = code & 7;
@@ -221,6 +220,7 @@ function CreateObject(buf, pos) { // {{{1
         }
         throw 'unhandled type or atom';
     }
+
     function skip() {
         var code = readCode();
         if((code&7)>3) {
@@ -261,7 +261,7 @@ function CreateObject(buf, pos) { // {{{1
 }
 // Export - both for commonjs and browser {{{1
 var cj;
-if(typeof exports === 'object') {
+if(typeof exports === 'object' && typeof module === 'object') {
     cj = exports;
 } else if(typeof window !== 'undefined') {
     window.cj = cj = {};
@@ -280,6 +280,5 @@ console.log('  cj:', JSON.stringify(compressed).length);
 CreateObject(compressed).get('meta').each(function(key, val) {
     console.log(key);
 });
-
 
 })();
