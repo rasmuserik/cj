@@ -12,7 +12,7 @@
 // 6: Array
 // 7: Object
 //
-function compress(json) {
+function cj(json) {
     function writeByte(num) { result[pos++] = num; }
     function writeCode(num) {
         writeByte(num&127);
@@ -140,14 +140,18 @@ function compress(json) {
     for(var i = 0; i < result.length; i+=2) {
         result[i/2] = String.fromCharCode(result[i] + 256 * result[i+1]);
     }
-    return result.slice(0, result.length/2).join('');
+    return CreateObject(result.slice(0, result.length/2).join(''));
+}
+var proto;
+function CreateObject(buf, pos) {
+    var result = Object.create(proto);
+    result.data = buf;
+    result.pos = pos;
+    return result
 }
 
-function CreateObject(buf, pos) {
-    pos = pos || buf.length * 2;
-    function peekByte() { 
-        return (buf.charCodeAt((pos-1)>>1) >> (8*((pos-1)&1))) & 255;
-    }
+proto = (function() {
+    var buf, pos;
     function readByte() { 
         --pos;
         return (buf.charCodeAt(pos>>1) >> (8*(pos&1))) & 255;
@@ -228,10 +232,14 @@ function CreateObject(buf, pos) {
         }
     }
     function each(fn) {
+        buf = this.data;
+        pos = this.pos || buf.length * 2;
+
         var code = readCode();
         var length = code >> 3;
         if((code&7) < 6) {
-            throw 'each only possible on array and object';
+            fn(undefined, readJSON());
+            return;
         }
         var isObj = (code&7===7);
         var pos0 = pos - length;
@@ -240,13 +248,17 @@ function CreateObject(buf, pos) {
             if(isObj) {
                 fn(readJSON(), CreateObject(buf, pos));
             } else {
-                fn(i++, createObject(buf, pos));
+                fn(i++, CreateObject(buf, pos));
             }
             skip();
         }
     }
     return {
-        val: function() { var t = pos; result = readJSON(); pos = t; return result; },
+        val: function() { 
+            buf = this.data;
+            pos = this.pos || buf.length * 2;
+            return readJSON();
+        },
         get: function(id) {
             var result = undefined
             this.each(function(key, val) {
@@ -255,29 +267,26 @@ function CreateObject(buf, pos) {
             return result;
         },
         each: each,
-        isArray: function() { return (peekByte()&7) === 6; },
-        isObject: function() { return (peekByte()&7) === 7; },
     };
-}
-// Export - both for commonjs and browser {{{1
-var cj;
-if(typeof exports === 'object' && typeof module === 'object') {
-    cj = exports;
-} else if(typeof window !== 'undefined') {
-    window.cj = cj = {};
-}
+})();
+cj.fromBin = CreateObject;
 
-cj.encode = compress;
-cj.CreateObject = CreateObject;
+
+// Export - both for commonjs and browser {{{1
+if(typeof exports === 'object' && typeof module === 'object') {
+    module.exports = cj;
+} else if(typeof window !== 'undefined') {
+    window.cj = cj;
+}
 
 var data;
 data = {a: 1, b:2, c: 3};
 data = JSON.parse(require('fs').readFileSync('test/sample.json', 'utf8'));
-require('assert').deepEqual(data, cj.CreateObject(cj.encode(data)).val());
-var compressed = cj.encode(data);
+require('assert').deepEqual(data, cj(data).val());
+var compressed = cj(data);
 console.log('json:', JSON.stringify(data).length);
-console.log('  cj:', JSON.stringify(compressed).length);
-CreateObject(compressed).get('meta').each(function(key, val) {
+console.log('  cj:', compressed.data.length);
+compressed.get('meta').each(function(key, val) {
     console.log(key);
 });
 
