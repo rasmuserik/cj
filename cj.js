@@ -17,9 +17,6 @@ var data = JSON.parse(fs.readFileSync('test/sample.json', 'utf8'));
 // 6: Compressed
 //
 exports.compress = function(json) { // {{{1
-    var result = [];
-    var pos = 4;
-
     function writeByte(num) {//{{{2
         result[pos++] = num;
     }
@@ -31,137 +28,135 @@ exports.compress = function(json) { // {{{1
             num >>= 7;
         }
     }
-    function writeType(json, length) { //{{{2
-        if(length === 'compressed') {
-            writeCode(6+json*8);
-        } else if(json === true) {
+    function writeArray(array) { //{{{2
+        var i = array.length;
+        while(i) {
+            --i;
+            write(array[i]);
+        }
+    }
+    function writeString(str) { //{{{2
+        var i = str.length;
+        while(i) {
+            --i;
+            writeCode(str.charCodeAt(i));
+        }
+    }
+    function write(json) {//{{{2
+        // TODO: add compression...
+        var prevpos, t; //{{{3
+        var dictId;
+        if(json === true) {
             writeCode(8);
         } else if(json === false) {
             writeCode(16);
         } else if(json === undefined) {
             writeCode(24);
+        } else if(json === null) {
+            writeCode(32);
         } else if(typeof json === 'string') {
-            writeCode(1 + length * 8);
+            prevpos = pos;
+            writeString(json);
+            writeCode(1 + (pos-prevpos)* 8);
         } else if(typeof json === 'number') {
             // integer
             if((json|0) === json) {
                 writeCode(Math.abs(json*16) | 2 | (json<0?8:0));
             } else {
-                writeCode(3 + length * 8);
-            }
-        } else if(Array.isArray(json)) {
-            writeCode(4 + 8 * length);
-        } else if(typeof json === 'object') {
-            writeCode(5 + 8 * length);
-        } else {
-            throw {error: 'not json', data: json};
-        }
-    }
-    function writeString(str) { //{{{2
-        // TODO: add compression...
-        for(var i = 0; i < str.length; ++i) {
-            var c = str.charCodeAt(i);
-            while(c > 127) {
-                writeByte((c&127)|128);
-                c <<= 7;
-            }
-            writeByte(c);
-        }
-    }
-    function writeArrayData(array) { //{{{2
-        lengths = [];
-        for(i=0;i<json.length;++i) {
-            lengths.push(writeData(json[i]));
-        }
-        for(i=json.length-1;i>=0;--i) {
-            writeType(json[i], lengths[i]);
-        }
-    }
-
-    function writeData(json) { //{{{2
-        // TODO: add compression if this json has already been written
-        var prevpos = pos;
-        var lengths, i;
-        if(typeof json === 'string') {
-            writeString(json);
-        } else if(typeof json === 'number') {
-            if((json|0) === json) {
-                return 0;
-            } else {
+                prevpos = pos;
                 writeString(json.toString());
+                writeCode(3 + (pos-prevpos)* 8);
             }
         } else if(Array.isArray(json)) {
-            writeArrayData(array);
+            prevpos = pos;
+            writeArray(json);
+            writeCode(4 + (pos-prevpos)* 8);
         } else if(typeof json === 'object') {
+            prevpos = pos;
             var array = [];
             Object.keys(json).forEach(function(key) {
                 array.push(key);
                 array.push(json[key]);
             });
-            writeArrayData(array);
+            writeArray(array);
+            writeCode(5 + (pos-prevpos)* 8);
+        } else {
+            throw {error: 'not json', data: json};
         }
-        return pos - prevpos;
     }
-    // Actual code {{{2 
-
-    writeType(json, writeData(json));
-
-    result[0] = (pos >> 0) & 255;
-    result[1] = (pos >> 8) & 255;
-    result[2] = (pos >> 16) & 255;
-    result[3] = (pos >> 24) & 255;
+    //{{{2 
+    var result = [];
+    var dictionary = {};
+    var pos = 0;
+    write(json);
     return result;
 }
-exports.decompress = function(buf) { // {{{1
-    var right = 0;
-    var left = 4;
-    right |= buf[0];
-    right |= buf[1]<<8;
-    right |= buf[2]<<16;
-    right |= buf[3]<<24;
 
-    function readRightByte() { //{{{2
-        return buf[--right];
+exports.decompress = function(buf, pos) { // {{{1
+    pos = pos || buf.length;
+    function readByte() { //{{{2
+        return buf[--pos];
     }
     function readCode() { //{{{2
         var b, result = 0;
         do {
-            b = readRightByte();
+            b = readByte();
             result = (result << 7) | (b&127);
         } while(b & 128);
         return result;
     }
-
-    function decompressString(length) {
-        throw 'TODO'
+    function readString(length) {//{{{2
+        var result = [];
+        var endpos = pos - length;
+        while(pos > endpos) {
+            result.push(String.fromCharCode(readCode()));
+        }
+        return result.join('');
     }
-    function decompress() {
+    function readArray(length) {//{{{2
+        var result = [];
+        var endpos = pos - length;
+        while(pos > endpos) {
+            result.push(readJSON());
+        }
+        return result;
+    };
+    function readJSON() {//{{{2
         var code = readCode();
         var length = code >> 3;
         var type = code & 7;
+        var result;
         if(code === 8) { return true; }
         if(code === 16) { return false; }
         if(code === 24) { return undefined; }
-        if(type === 1) { // String
-            return decompressString(length);
-        } else if(type === 2) { // Integer
-            if(code&8) { // sign
-                return -(code>>4);
-            } else {
-                return code>>4;
+        if(code === 32) { return null; }
+        if(type === 1) { return readString(length); }
+        if(type === 2) { return (code&8)?-(code>>4):(code>>4); } // Integer
+        if(type === 3) { return +readString(length); } // Number
+        if(type === 4) { return readArray(length); }
+        if(type === 5) { // Object
+            var array = readArray(length);
+            var result = {};
+            for(var i = 0; i < array.length; i+=2) {
+                result[array[i]] = array[i+1];
             }
-        } else if(type === 3) { // Number
-            return +decompressString(length);
-        } else if(type === 4) { // Array
-            throw 'todo';
-        } else if(type === 5) { // Object
-            throw 'todo';
-        } else if(type === 6) { // Compressed
-            throw 'todo';
-        }
+            return result;
+        } 
+        throw 'unhandled type or atom';
     }
-    return decompress();
+    return readJSON(); // {{{2
 }
-
-var compressed = exports.compress(['abc', '123', true, false, undefined, 1, 2, 3.5]);
-console.log(exports.decompress(exports.compress(-10001)));
+//{{{1
+var testdata = JSON.parse(require('fs').readFileSync('test/sample.json'));
+var testdata = ['abc', '123', {a:1, b:[1,'123',3], c:{}}, true, false, undefined, 1, 2, 3.5];
+var json = JSON.stringify(testdata);
+var compressed = exports.compress(testdata);
+var decompressed = JSON.stringify(exports.decompress(compressed));
+if(json !== decompressed) {
+    console.log('decompression error:');
+    console.log(json);
+    console.log(decompressed);
+} else {
+    console.log('JSON length:', json.length);
+    console.log('compressed length:', compressed.length);
+}
