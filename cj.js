@@ -35,14 +35,13 @@ function compress(json) { // {{{1
             write(array[i]);
         }
     }
-    function updateDict(dict, str, len) {
+    function updateDict(dict, str) {
         if(str) {
             var next = dict[str[0]] || {};
             dict[str[0]] = next;
-            updateDict(next, str.slice(1), len);
+            updateDict(next, str.slice(1));
         } else {
             dict.pos = pos;
-            dict.len = len;
         }
     }
     function codeLength(code) {
@@ -55,7 +54,8 @@ function compress(json) { // {{{1
     }
     function writeString(str) { //{{{2
         var i = str.length;
-        var encHist = [];
+        var prevEnc = undefined;
+        var enc;
         while(i) {
             var i0 = i;
             --i;
@@ -74,15 +74,16 @@ function compress(json) { // {{{1
                 if(dict.pos) {
                     len = i - j + 1;
                     code2 = pos - dict.pos;
-                    c = dict.len - 2;
+                    c = code2 & 31;
+                    code2 = code2 >> 5;
                     i = j;
                 }
                 --j;
             }
             if(len) {
-                //console.log(len, code2,  codeLength(code2>>5)); 
+                //console.log(len, code2, codeLength(code2>>5));
             }
-            if(len > codeLength(code2>>5)) { 
+            if(len > codeLength(code2>>5)) {
             }
 
             // write
@@ -92,10 +93,11 @@ function compress(json) { // {{{1
             writeCode(c);
 
             // update table
-            encHist.push(str.slice(i, i0).split('').reverse().join(''));
-            for(k = 2; k <= Math.min(encHist.length, 32); ++k) {
-                updateDict(trie, encHist.slice(-k).join(''), k);
+            enc = str.slice(i, i0).split('').reverse().join('');
+            if(prevEnc !== undefined) {
+                updateDict(trie, prevEnc+enc);
             }
+            prevEnc = enc;
         }
     }
     function write(json) {//{{{2
@@ -149,7 +151,7 @@ function compress(json) { // {{{1
             throw {error: 'not json', data: json};
         }
     }
-    //{{{2 
+    //{{{2
     var result = [];
     var strDict = {}, numDict = {};
     var trie = {};
@@ -174,14 +176,11 @@ function decompress(buf, pos) { // {{{1
     function readStringCode(acc) {//{{{2
        var c = readCode();
        if(c<32) {
-           //c = readCode() * 32 + c;
-           var code2 = readCode();
+           c = readCode() * 32 + c;
            var prevpos = pos;
-           pos -= code2;
-           c+=2;
-           do {
-               readStringCode(acc);
-           } while(--c);
+           pos -= c;
+           readStringCode(acc);
+           readStringCode(acc);
            pos = prevpos;
        } else {
           acc.push(String.fromCharCode(c & 65535));
@@ -223,7 +222,7 @@ function decompress(buf, pos) { // {{{1
                 result[array[i]] = array[i+1];
             }
             return result;
-        } 
+        }
         if(type === 6) { // backref
             return decompress(buf, pos - length);
         }
@@ -235,7 +234,6 @@ function decompress(buf, pos) { // {{{1
 var testdata = ['ababababa bababa babab\n\t\rc', '123', {a:1, b:[1,'123',3], c:{}}, true, false, undefined, 1, 2, 3.5];
 var testdata = JSON.parse(require('fs').readFileSync('test/sample.json'));
 var json = JSON.stringify(testdata);
-console.log(json);
 var compressed = compress(testdata);
 var decompressed = JSON.stringify(decompress(compressed));
 //console.log(compressed.map(function(a) { return String.fromCharCode(a); }));
