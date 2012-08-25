@@ -1,8 +1,4 @@
-var fs = require('fs');
-
-var data = JSON.parse(fs.readFileSync('test/sample.json', 'utf8'));
-//console.log('Uncompressed length:', JSON.stringify(data).length);
-
+(function(){
 // Types
 // 0: atom
 // • 8: true
@@ -17,9 +13,7 @@ var data = JSON.parse(fs.readFileSync('test/sample.json', 'utf8'));
 // 6: Compressed
 //
 function compress(json) { // {{{1
-    function writeByte(num) {//{{{2
-        result[pos++] = num;
-    }
+    function writeByte(num) { result[pos++] = num; } //{{{2
     function writeCode(num) { //{{{2
         writeByte(num&127);
         num = (num / 128) |0;
@@ -44,14 +38,6 @@ function compress(json) { // {{{1
             dict.pos = pos;
         }
     }
-    function codeLength(code) {
-        var result = 0;
-        do {
-            ++result;
-            code >>= 7;
-        } while(code);
-        return result;
-    }
     function writeString(str) { //{{{2
         var i = str.length;
         var prevEnc = undefined;
@@ -62,17 +48,15 @@ function compress(json) { // {{{1
 
             // Single char
             var c = str.charCodeAt(i);
-            if(c < 32) { c+=65536; };
+            if(!(c&0xe0)) { c+=256; };
 
             // Lookup in table
             var j = i;
-            var len = 0;
             var code2 = undefined;
-            var dict = trie;
+            var dict = tree;
             while(j && dict[str[j]]) {
                 dict = dict[str[j]];
                 if(dict.pos) {
-                    len = i - j + 1;
                     code2 = pos - dict.pos;
                     c = code2 & 31;
                     code2 = code2 >> 5;
@@ -80,28 +64,22 @@ function compress(json) { // {{{1
                 }
                 --j;
             }
-            if(len) {
-                //console.log(len, code2, codeLength(code2>>5));
-            }
-            if(len > codeLength(code2>>5)) {
-            }
 
-            // write
+            // Write the code
             if(c < 32) {
                 writeCode(code2);
             }
             writeCode(c);
 
-            // update table
+            // Update compression dictionary
             enc = str.slice(i, i0).split('').reverse().join('');
             if(prevEnc !== undefined) {
-                updateDict(trie, prevEnc+enc);
+                updateDict(tree, prevEnc+enc);
             }
             prevEnc = enc;
         }
     }
     function write(json) {//{{{2
-        // TODO: add compression...
         var prevpos, t; //{{{3
         if(json === true) {
             writeCode(8);
@@ -154,16 +132,24 @@ function compress(json) { // {{{1
     //{{{2
     var result = [];
     var strDict = {}, numDict = {};
-    var trie = {};
+    var tree = {};
     var pos = 0;
     write(json);
-    return result;
+    if(result.length & 1) {
+        result.unshift(0);
+    }
+    for(var i = 0; i < result.length; i+=2) {
+        result[i/2] = String.fromCharCode(result[i] + 256 * result[i+1]);
+    }
+    return result.slice(0, result.length/2).join('');
 }
 
 function decompress(buf, pos) { // {{{1
-    pos = pos || buf.length;
+    pos = pos || buf.length * 2;
     function readByte() { //{{{2
-        return buf[--pos];
+        --pos;
+        return (buf.charCodeAt(pos>>1) >> (8*(pos&1))) & 255;
+        //return buf[--pos];
     }
     function readCode() { //{{{2
         var b, result = 0;
@@ -183,7 +169,7 @@ function decompress(buf, pos) { // {{{1
            readStringCode(acc);
            pos = prevpos;
        } else {
-          acc.push(String.fromCharCode(c & 65535));
+          acc.push(String.fromCharCode((c&0xe0)?c:c-256));
        }
     }
     function readString(length) {//{{{2
@@ -230,18 +216,15 @@ function decompress(buf, pos) { // {{{1
     }
     return readJSON(); // {{{2
 }
-//{{{1
-var testdata = ['ababababa bababa babab\n\t\rc', '123', {a:1, b:[1,'123',3], c:{}}, true, false, undefined, 1, 2, 3.5];
-var testdata = JSON.parse(require('fs').readFileSync('test/sample.json'));
-var json = JSON.stringify(testdata);
-var compressed = compress(testdata);
-var decompressed = JSON.stringify(decompress(compressed));
-//console.log(compressed.map(function(a) { return String.fromCharCode(a); }));
-//console.log([compressed.map(function(a) { return String.fromCharCode(a); }).reverse().join('')]);
-if(json !== decompressed) { console.log('compression/decompression error:');
-    console.log(json);
-    console.log(decompressed);
-} else {
-    console.log('JSON length:', json.length);
-    console.log('compressed length:', compressed.length);
+// Export - both for commonjs and browser {{{1
+var cj;
+if(typeof exports === 'object') {
+    cj = exports;
+} else if(typeof window !== 'undefined') {
+    window.cj = cj = {};
 }
+
+cj.encode = compress;
+cj.decode = decompress;
+
+})();
