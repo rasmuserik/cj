@@ -1,4 +1,4 @@
-# CJ - Compressed JSON
+# ![logo](https://solsort.com/_logo.png) CJ - Compressed JSON
 
 The compact way to store JavaScript objects.
 
